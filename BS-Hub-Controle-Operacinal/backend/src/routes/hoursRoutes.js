@@ -1,0 +1,10 @@
+const express=require('express');
+const {auth,roles}=require('../middleware/auth');
+const pool=require('../services/mysql');
+const router=express.Router();
+router.use(auth);
+router.get('/',async(req,res)=>{try{const [hours]=await pool.query("SELECT dia,nome,aberto,TIME_FORMAT(inicio,'%H:%i') inicio,TIME_FORMAT(fim,'%H:%i') fim FROM horarios_funcionamento ORDER BY dia");const [blocks]=await pool.query("SELECT b.id,b.barbeiro_id,DATE_FORMAT(b.data,'%Y-%m-%d') data,TIME_FORMAT(b.inicio,'%H:%i') inicio,TIME_FORMAT(b.fim,'%H:%i') fim,b.motivo,u.nome barbeiro FROM bloqueios_agenda b LEFT JOIN barbeiros br ON br.id=b.barbeiro_id LEFT JOIN usuarios u ON u.id=br.usuario_id ORDER BY b.data DESC,b.inicio");res.json({hours,blocks});}catch(e){res.status(500).json({mensagem:e.message});}});
+router.put('/',roles('administrador'),async(req,res)=>{const hours=req.body?.hours;if(!Array.isArray(hours))return res.status(400).json({mensagem:'Horários inválidos.'});try{for(const h of hours)await pool.query('INSERT INTO horarios_funcionamento(dia,nome,aberto,inicio,fim) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE nome=VALUES(nome),aberto=VALUES(aberto),inicio=VALUES(inicio),fim=VALUES(fim)',[h.dia,h.nome,h.aberto?1:0,h.inicio,h.fim]);res.json({mensagem:'Horários atualizados.'});}catch(e){res.status(500).json({mensagem:e.message});}});
+router.post('/blocks',roles('administrador'),async(req,res)=>{const {barbeiro_id=null,data,inicio='00:00',fim='23:59',motivo='Folga ou bloqueio'}=req.body||{};if(!data)return res.status(400).json({mensagem:'Informe a data.'});try{const [r]=await pool.query('INSERT INTO bloqueios_agenda(barbeiro_id,data,inicio,fim,motivo) VALUES (?,?,?,?,?)',[barbeiro_id||null,data,inicio,fim,motivo]);res.status(201).json({id:r.insertId});}catch(e){res.status(500).json({mensagem:e.message});}});
+router.delete('/blocks/:id',roles('administrador'),async(req,res)=>{try{await pool.query('DELETE FROM bloqueios_agenda WHERE id=?',[Number(req.params.id)]);res.json({mensagem:'Bloqueio removido.'});}catch(e){res.status(500).json({mensagem:e.message});}});
+module.exports=router;

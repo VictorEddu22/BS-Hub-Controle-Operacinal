@@ -1,0 +1,10 @@
+const express=require('express');
+const {auth,roles}=require('../middleware/auth');
+const pool=require('../services/mysql');
+const router=express.Router();
+router.use(auth);
+router.get('/',async(req,res)=>{try{const [r]=await pool.query('SELECT id,nome,descricao,duracao,preco,ativo FROM servicos ORDER BY nome');res.json(r);}catch(e){res.status(500).json({mensagem:e.message});}});
+router.post('/',roles('administrador'),async(req,res)=>{const {nome,descricao='',duracao,preco,ativo=true}=req.body||{};if(!nome||!duracao||preco===undefined)return res.status(400).json({mensagem:'Nome, duração e preço são obrigatórios.'});try{const [r]=await pool.query('INSERT INTO servicos(nome,descricao,duracao,preco,ativo) VALUES (?,?,?,?,?)',[nome,descricao,Number(duracao),Number(preco),ativo?1:0]);res.status(201).json({id:r.insertId,nome,descricao,duracao:Number(duracao),preco:Number(preco),ativo:Boolean(ativo)});}catch(e){res.status(500).json({mensagem:e.message});}});
+router.put('/:id',roles('administrador'),async(req,res)=>{const {nome,descricao='',duracao,preco,ativo=true}=req.body||{};try{await pool.query('UPDATE servicos SET nome=?,descricao=?,duracao=?,preco=?,ativo=? WHERE id=?',[nome,descricao,Number(duracao),Number(preco),ativo?1:0,Number(req.params.id)]);res.json({mensagem:'Serviço atualizado.'});}catch(e){res.status(500).json({mensagem:e.message});}});
+router.delete('/:id',roles('administrador'),async(req,res)=>{const id=Number(req.params.id);try{const [[c]]=await pool.query("SELECT COUNT(*) total FROM agendamentos WHERE servico_id=? AND status<>'cancelado'",[id]);if(Number(c.total)>0)return res.status(409).json({mensagem:'Há agendamentos vinculados a este serviço.'});await pool.query('DELETE FROM servicos WHERE id=?',[id]);res.json({mensagem:'Serviço excluído.'});}catch(e){res.status(500).json({mensagem:e.message});}});
+module.exports=router;
